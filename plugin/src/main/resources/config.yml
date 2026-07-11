@@ -1,0 +1,31 @@
+# BuildEngine plugin configuration.
+#
+# SECURITY: the RPC server binds localhost by default and requires a bearer token.
+# Change `rpc.token` before use. Never bind a non-loopback host without a firewall +
+# a strong token — every RPC can edit the world.
+
+rpc:
+  # Bind address. Keep 127.0.0.1 so only local processes (the Node MCP) can reach it.
+  host: 127.0.0.1
+  # Port for both HTTP (/rpc) and WebSocket (/ws).
+  port: 25566
+  # Bearer token. The Node MCP sends `Authorization: Bearer <token>` and calls `authenticate`.
+  # MUST be changed from the default before exposing the server.
+  token: "CHANGE_ME"
+
+limits:
+  # Hard cap on the volume (blocks) of any single selection/edit region. Rejects runaway fills.
+  maxRegionVolume: 8000000        # 8M blocks (~200 x 200 x 200)
+  # Blocks written per server tick by the Bukkit (main-thread) editor's self-rescheduling drain.
+  # Ignored by the FAWE editor, which edits off-thread and is NOT tick-budgeted (§3.4).
+  budgetPerTick: 32768
+  # TPS floor for the Bukkit editor's TPS guard: below this, the drain yields a tick before continuing.
+  tpsFloor: 18.0
+
+# Worlds the plugin is allowed to edit. Empty list = allow all loaded worlds (NOT recommended).
+worldAllowlist:
+  - world
+
+# Auto-snapshot any region whose volume exceeds this before a mutating edit, so a bad
+# fill can be restored. (Snapshot mechanism itself is implemented in a later milestone.)
+autosnapshotThreshold: 100000

@@ -25,6 +25,26 @@ A Minecraft bot powered by large language models and [Mineflayer API](https://gi
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@yuniko-software/minecraft-mcp-server/badge" alt="mcp-minecraft MCP server" />
 </a>
 
+## Monorepo layout
+
+This repository is a [pnpm](https://pnpm.io) workspace. The build engine is split into focused packages:
+
+| Package | Name | Role |
+|---|---|---|
+| [`mcp/`](mcp) | `@mcbuild/mcp` | MCP server — the LLM-facing tool surface and orchestrator (evolved from the original bot server) |
+| [`engine/`](engine) | `@mcbuild/engine` | Build engine — deterministic, rule-driven parametric geometry pipeline |
+| [`renderer/`](renderer) | `@mcbuild/renderer` | Camera / renderer — turns extracted block data into multi-angle PNGs |
+| [`protocol/`](protocol) | `@mcbuild/protocol` | Shared contract — JSON-RPC types + zod schemas shared by the MCP server and the plugin |
+| [`plugin/`](plugin) | (Java) | Paper server plugin — commits blocks directly into the world (not a Node workspace) |
+
+The overarching architecture, phased roadmap, and rule system are documented in [BUILD_ENGINE_PLAN.md](BUILD_ENGINE_PLAN.md).
+
+Common workspace scripts (run from the repo root): `pnpm build`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, and `pnpm dev:mcp`.
+
+## Legacy (bot backend)
+
+> The sections below describe the original Mineflayer player-bot backend. It remains the **default** backend (`--backend=bot`) and works exactly as before; it is retained as a fallback through milestone M5 (see [BUILD_ENGINE_PLAN.md](BUILD_ENGINE_PLAN.md) §9). The bot server now lives in the [`mcp/`](mcp) package.
+
 ## Prerequisites
 
 - Git
