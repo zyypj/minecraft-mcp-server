@@ -1,0 +1,47 @@
+{
+  "name": "@mcbuild/engine",
+  "version": "0.1.0",
+  "description": "The Artistic Build Engine: a deterministic, rule-driven, seeded parametric pipeline that composes style-conditioned Minecraft builds and scores them against an anti-slop rubric (see BUILD_ENGINE_PLAN.md §5).",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "ava"
+  },
+  "ava": {
+    "extensions": [
+      "ts"
+    ],
+    "nodeArguments": [
+      "--import=tsx"
+    ],
+    "files": [
+      "test/**/*.ts"
+    ]
+  },
+  "dependencies": {
+    "@mcbuild/protocol": "workspace:*",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "ava": "^6.4.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.10.0"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@mcbuild/protocol",
+  "version": "0.1.0",
+  "description": "Language-neutral contract (JSON-RPC 2.0 envelope + domain types) shared between the Node MCP server and the Java Paper plugin of the Minecraft build engine. JSON Schema is the source of truth; TS+zod and Java records are the two typed bindings.",
+  "type": "module",
+  "main": "ts/index.ts",
+  "types": "ts/index.ts",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./schema/*": "./schema/*"
+  },
+  "files": [
+    "ts",
+    "schema",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "license": "MIT"
+}

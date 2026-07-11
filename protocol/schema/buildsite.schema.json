@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcbuild.dev/protocol/buildsite.schema.json",
+  "title": "BuildSite",
+  "description": "A named, reserved region: the persistent contract between 'where' and 'what', distinct from the transient voxel buffer written into it (BUILD_ENGINE_PLAN.md section 7.2). Anchor + facing are the coordinate frame; region is just the box. Terrain is sampled ONCE at define time so passes plan against a slope without per-block world queries.",
+  "$ref": "https://mcbuild.dev/protocol/buildsite.schema.json#/$defs/BuildSite",
+  "$defs": {
+    "TerrainProfile": {
+      "title": "TerrainProfile",
+      "description": "Ground survey under the footprint, sampled once at define time.",
+      "type": "object",
+      "properties": {
+        "heightmap": {
+          "type": "array",
+          "description": "Ground Y per footprint cell, row-major indexed x + z*width.",
+          "items": { "type": "integer" }
+        },
+        "surfacePalette": {
+          "type": "array",
+          "description": "Block states observed at the surface under the footprint.",
+          "items": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/BlockState" }
+        },
+        "slope": {
+          "type": "number",
+          "description": "Max ground rise (in blocks) across the footprint; drives terracing decisions."
+        },
+        "minGroundY": { "type": "integer" },
+        "maxGroundY": { "type": "integer" },
+        "water": {
+          "type": "boolean",
+          "description": "True if water or lava is present under the footprint."
+        }
+      },
+      "required": ["heightmap", "surfacePalette", "slope", "minGroundY", "maxGroundY", "water"],
+      "additionalProperties": false
+    },
+    "Adjacency": {
+      "title": "Adjacency",
+      "description": "What surrounds the site; used for grounding, entrance-facing and collision avoidance.",
+      "type": "object",
+      "properties": {
+        "hasNeighbors": { "type": "boolean" },
+        "structures": {
+          "type": "array",
+          "description": "Descriptions of nearby structures/collisions.",
+          "items": { "type": "string" }
+        },
+        "roadAccess": { "type": "boolean" },
+        "water": { "type": "boolean" }
+      },
+      "required": ["hasNeighbors"],
+      "additionalProperties": false
+    },
+    "BuildSite": {
+      "title": "BuildSite",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "region": {
+          "title": "BuildSiteRegion",
+          "description": "The box plus optional non-rectangular mask.",
+          "type": "object",
+          "properties": {
+            "type": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/SelectionType" },
+            "min": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Vec3" },
+            "max": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Vec3" },
+            "mask": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/RegionMask" }
+          },
+          "required": ["type", "min", "max"],
+          "additionalProperties": false
+        },
+        "anchor": {
+          "title": "BuildSiteAnchor",
+          "description": "The local->world coordinate frame. Rotating a build changes the mapping, not the box.",
+          "type": "object",
+          "properties": {
+            "origin": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Vec3" },
+            "baseY": { "type": "integer" },
+            "facing": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Facing" }
+          },
+          "required": ["origin", "baseY", "facing"],
+          "additionalProperties": false
+        },
+        "footprint": {
+          "title": "Footprint",
+          "type": "object",
+          "properties": {
+            "width": { "type": "integer", "minimum": 0 },
+            "length": { "type": "integer", "minimum": 0 },
+            "height": { "type": "integer", "minimum": 0 }
+          },
+          "required": ["width", "length", "height"],
+          "additionalProperties": false
+        },
+        "terrain": { "$ref": "https://mcbuild.dev/protocol/buildsite.schema.json#/$defs/TerrainProfile" },
+        "context": {
+          "title": "BuildSiteContext",
+          "type": "object",
+          "properties": {
+            "biome": { "type": "string" },
+            "adjacency": { "$ref": "https://mcbuild.dev/protocol/buildsite.schema.json#/$defs/Adjacency" },
+            "reserved": {
+              "type": "boolean",
+              "description": "Prevents overlapping concurrent builds."
+            }
+          },
+          "required": ["biome", "adjacency", "reserved"],
+          "additionalProperties": false
+        },
+        "currentBuildVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Monotonic version pointer into the site's BuildVersion history (section 7.4)."
+        }
+      },
+      "required": ["id", "name", "region", "anchor", "footprint", "terrain", "context", "currentBuildVersion"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,28 @@
+name: BuildEngine
+version: 0.1.0
+main: com.mcbuild.buildengine.BuildEnginePlugin
+api-version: '1.21'
+author: mcbuild
+description: >-
+  Localhost JSON-RPC "Committer" for the Minecraft artistic build engine. Exposes a
+  bearer-authenticated HTTP + WebSocket RPC endpoint that a Node MCP process calls to
+  edit the world in bulk (FAWE off-thread by default, Bukkit main-thread fallback).
+website: https://github.com/mcbuild/minecraft-build-mcp
+
+# WorldEdit / FastAsyncWorldEdit are optional at load: FAWE is the default (off-thread)
+# WorldEditor backend, but the plugin falls back to the main-thread Bukkit editor when
+# FAWE is absent. softdepend => load after them when present, but do not require them.
+softdepend:
+  - WorldEdit
+  - FastAsyncWorldEdit
+
+commands:
+  buildengine:
+    description: BuildEngine admin/status command.
+    usage: /buildengine <status|reload>
+    permission: buildengine.admin
+
+permissions:
+  buildengine.admin:
+    description: Administer the BuildEngine plugin (view status, reload config).
+    default: op

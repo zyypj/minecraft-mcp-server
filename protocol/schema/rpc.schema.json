@@ -1,0 +1,520 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcbuild.dev/protocol/rpc.schema.json",
+  "title": "JSON-RPC 2.0 protocol between the Node MCP server and the Java plugin",
+  "description": "Envelope + shared option object + per-method param/result shapes for the plugin RPC (BUILD_ENGINE_PLAN.md section 3.3). Transport: Javalin (HTTP for one-shot, WebSocket for the iterative session). Every mutating method returns a jobId immediately and executes async, streaming job.progress notifications over WS. Rendering is NOT a plugin RPC.",
+
+  "$defs": {
+    "Options": {
+      "title": "Options",
+      "description": "Shared edit flags (mirrors GDMC-HTTP). notifyClients MUST default true or placed blocks stay invisible to connected players.",
+      "type": "object",
+      "properties": {
+        "physics": { "type": "boolean", "default": false, "description": "Trigger block physics/updates on write." },
+        "updateLighting": { "type": "boolean", "default": true, "description": "Recompute light after the edit." },
+        "notifyClients": { "type": "boolean", "default": true, "description": "Resend changed chunk sections to players." },
+        "spawnDrops": { "type": "boolean", "default": false, "description": "Spawn item drops for replaced blocks." },
+        "budgetPerTick": { "type": "integer", "minimum": 1, "description": "Blocks/tick cap for the BukkitWorldEditor (main-thread) path only; ignored by FAWE." }
+      },
+      "additionalProperties": false
+    },
+    "JobState": {
+      "title": "JobState",
+      "type": "string",
+      "enum": ["queued", "running", "done", "failed", "cancelled"]
+    },
+    "BlockEntry": {
+      "title": "BlockEntry",
+      "description": "A single positioned block state.",
+      "type": "object",
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "z": { "type": "integer" },
+        "data": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/BlockState" }
+      },
+      "required": ["x", "y", "z", "data"],
+      "additionalProperties": false
+    },
+    "Conflict": {
+      "title": "Conflict",
+      "type": "object",
+      "properties": {
+        "pos": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Vec3" },
+        "reason": { "type": "string" }
+      },
+      "required": ["pos", "reason"],
+      "additionalProperties": false
+    },
+    "Rotation": {
+      "title": "Rotation",
+      "description": "Clockwise degrees for schematic paste.",
+      "type": "integer",
+      "enum": [0, 90, 180, 270]
+    },
+    "Mirror": {
+      "title": "Mirror",
+      "type": "string",
+      "enum": ["none", "x", "z", "xz"]
+    },
+    "SchematicFormat": {
+      "title": "SchematicFormat",
+      "type": "string",
+      "enum": ["schem", "json"]
+    },
+
+    "RpcId": {
+      "title": "RpcId",
+      "description": "Request id. Notifications omit it entirely.",
+      "type": ["string", "integer"]
+    },
+    "RpcRequest": {
+      "title": "RpcRequest",
+      "type": "object",
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "id": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/RpcId" },
+        "method": { "type": "string" },
+        "params": { "type": "object" }
+      },
+      "required": ["jsonrpc", "id", "method"],
+      "additionalProperties": false
+    },
+    "RpcNotification": {
+      "title": "RpcNotification",
+      "description": "A request with no id; no response is returned.",
+      "type": "object",
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "method": { "type": "string" },
+        "params": { "type": "object" }
+      },
+      "required": ["jsonrpc", "method"],
+      "additionalProperties": false
+    },
+    "RpcError": {
+      "title": "RpcError",
+      "type": "object",
+      "properties": {
+        "code": { "type": "integer" },
+        "message": { "type": "string" },
+        "data": {}
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    },
+    "RpcSuccessResponse": {
+      "title": "RpcSuccessResponse",
+      "type": "object",
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "id": { "type": ["string", "integer", "null"] },
+        "result": {}
+      },
+      "required": ["jsonrpc", "id", "result"],
+      "additionalProperties": false
+    },
+    "RpcErrorResponse": {
+      "title": "RpcErrorResponse",
+      "type": "object",
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "id": { "type": ["string", "integer", "null"] },
+        "error": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/RpcError" }
+      },
+      "required": ["jsonrpc", "id", "error"],
+      "additionalProperties": false
+    },
+    "RpcResponse": {
+      "title": "RpcResponse",
+      "oneOf": [
+        { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/RpcSuccessResponse" },
+        { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/RpcErrorResponse" }
+      ]
+    },
+    "JobProgressParams": {
+      "title": "JobProgressParams",
+      "type": "object",
+      "properties": {
+        "jobId": { "type": "string" },
+        "done": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["jobId", "done", "total"],
+      "additionalProperties": false
+    },
+    "JobProgressNotification": {
+      "title": "JobProgressNotification",
+      "description": "Streamed over WS during a long-running job.",
+      "type": "object",
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "method": { "const": "job.progress" },
+        "params": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/JobProgressParams" }
+      },
+      "required": ["jsonrpc", "method", "params"],
+      "additionalProperties": false
+    }
+  },
+
+  "methods": {
+    "authenticate": {
+      "description": "Bearer-token handshake; must be the first call on a connection.",
+      "params": {
+        "type": "object",
+        "properties": { "token": { "type": "string" } },
+        "required": ["token"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "serverVersion": { "type": "string" },
+          "dataVersion": { "type": "integer" },
+          "faweAvailable": { "type": "boolean" }
+        },
+        "required": ["ok", "serverVersion", "dataVersion", "faweAvailable"],
+        "additionalProperties": false
+      }
+    },
+    "selectRegion": {
+      "description": "Register + lock a working region.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "region": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Region" },
+          "name": { "type": "string" }
+        },
+        "required": ["region"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "selectionId": { "type": "string" },
+          "blockCount": { "type": "integer", "minimum": 0 },
+          "dimensions": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Dimensions" }
+        },
+        "required": ["selectionId", "blockCount", "dimensions"],
+        "additionalProperties": false
+      }
+    },
+    "getRegionInfo": {
+      "description": "Enrich a selection or region with site data. Provide selectionId OR region.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "selectionId": { "type": "string" },
+          "region": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Region" }
+        },
+        "anyOf": [
+          { "required": ["selectionId"] },
+          { "required": ["region"] }
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "dimensions": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Dimensions" },
+          "biome": { "type": "string" },
+          "groundLevel": { "type": "integer" },
+          "heightmap": { "type": "array", "items": { "type": "integer" } },
+          "paletteHistogram": {
+            "type": "object",
+            "additionalProperties": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "required": ["dimensions", "biome", "groundLevel", "heightmap", "paletteHistogram"],
+        "additionalProperties": false
+      }
+    },
+    "getBlocks": {
+      "description": "Read block states in a region. Returns an explicit list or a compact RLE, tagged by 'encoding'.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "region": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Region" }
+        },
+        "required": ["region"],
+        "additionalProperties": false
+      },
+      "result": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "encoding": { "const": "list" },
+              "region": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Region" },
+              "blocks": { "type": "array", "items": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/BlockEntry" } }
+            },
+            "required": ["encoding", "region", "blocks"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "description": "Palette + run-length in .schem order (x + z*w + y*w*l).",
+            "properties": {
+              "encoding": { "const": "rle" },
+              "region": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Region" },
+              "palette": { "type": "array", "items": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/BlockState" } },
+              "runs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer", "minimum": 1 },
+                    "index": { "type": "integer", "minimum": 0 }
+                  },
+                  "required": ["count", "index"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["encoding", "region", "palette", "runs"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "setBlocks": {
+      "description": "Write an explicit list of block states (async job).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "world": { "type": "string" },
+          "blocks": { "type": "array", "items": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/BlockEntry" } },
+          "options": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/Options" }
+        },
+        "required": ["world", "blocks"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "jobId": { "type": "string" },
+          "changed": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["jobId", "changed"],
+        "additionalProperties": false
+      }
+    },
+    "fillRegion": {
+      "description": "Fill a region with a FAWE weighted Pattern under an optional Mask (async job).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "region": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Region" },
+          "pattern": { "type": "string", "description": "FAWE pattern expression, e.g. '50%stone,50%cobblestone' or a single block state." },
+          "mask": { "type": "string", "description": "FAWE mask expression limiting which cells are written." },
+          "options": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/Options" }
+        },
+        "required": ["region", "pattern"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": { "jobId": { "type": "string" } },
+        "required": ["jobId"],
+        "additionalProperties": false
+      }
+    },
+    "pasteSchematic": {
+      "description": "Paste a previously saved/captured schematic at an anchor (async job).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "schematicId": { "type": "string" },
+          "at": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Vec3" },
+          "rotate": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/Rotation" },
+          "mirror": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/Mirror" },
+          "ignoreAir": { "type": "boolean" },
+          "options": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/Options" }
+        },
+        "required": ["schematicId", "at"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "jobId": { "type": "string" },
+          "pastedBounds": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Bounds" }
+        },
+        "required": ["jobId", "pastedBounds"],
+        "additionalProperties": false
+      }
+    },
+    "saveSchematic": {
+      "description": "Persist a region as a Sponge .schem and return a handle.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "region": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Region" },
+          "name": { "type": "string" }
+        },
+        "required": ["region", "name"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "schematicId": { "type": "string" },
+          "bytesRef": { "type": "string", "description": "Opaque handle to the persisted bytes (path/uri/blob id)." }
+        },
+        "required": ["schematicId", "bytesRef"],
+        "additionalProperties": false
+      }
+    },
+    "captureRegion": {
+      "description": "Extract region data for the renderer. Returns schematicId for 'schem' or jsonRef for 'json'.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "region": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Region" },
+          "format": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/SchematicFormat" }
+        },
+        "required": ["region", "format"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "format": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/SchematicFormat" },
+          "schematicId": { "type": "string" },
+          "jsonRef": { "type": "string" }
+        },
+        "required": ["format"],
+        "additionalProperties": false
+      }
+    },
+    "applyDiff": {
+      "description": "Commit an engine WorldDiff (the 'after' states) as an async job.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "diff": { "$ref": "https://mcbuild.dev/protocol/worlddiff.schema.json#/$defs/WorldDiff" },
+          "options": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/Options" }
+        },
+        "required": ["diff"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": { "jobId": { "type": "string" } },
+        "required": ["jobId"],
+        "additionalProperties": false
+      }
+    },
+    "undoDiff": {
+      "description": "Apply the stored inverse patch (the 'before' states) for a committed diff.",
+      "params": {
+        "type": "object",
+        "properties": { "diffId": { "type": "string" } },
+        "required": ["diffId"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "jobId": { "type": "string" },
+          "restored": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["jobId", "restored"],
+        "additionalProperties": false
+      }
+    },
+    "snapshot": {
+      "description": "Take a raw world snapshot of a region (safety net independent of the engine diff).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "region": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Region" }
+        },
+        "required": ["region"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": { "snapshotId": { "type": "string" } },
+        "required": ["snapshotId"],
+        "additionalProperties": false
+      }
+    },
+    "restoreSnapshot": {
+      "description": "Restore a previously taken snapshot.",
+      "params": {
+        "type": "object",
+        "properties": { "snapshotId": { "type": "string" } },
+        "required": ["snapshotId"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": { "restored": { "type": "boolean" } },
+        "required": ["restored"],
+        "additionalProperties": false
+      }
+    },
+    "getJob": {
+      "description": "Poll an async job's status.",
+      "params": {
+        "type": "object",
+        "properties": { "jobId": { "type": "string" } },
+        "required": ["jobId"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "state": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/JobState" },
+          "progress": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/JobProgressParams" },
+          "changed": { "type": "integer", "minimum": 0 },
+          "error": { "type": "string" }
+        },
+        "required": ["state", "progress"],
+        "additionalProperties": false
+      }
+    },
+    "dryRun": {
+      "description": "Simulate a mutating method without writing. Returns the would-be change count, bounds, conflicts and warnings.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "editMethod": {
+            "type": "string",
+            "enum": ["setBlocks", "fillRegion", "pasteSchematic", "applyDiff"]
+          },
+          "params": { "type": "object" }
+        },
+        "required": ["editMethod", "params"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "wouldChange": { "type": "integer", "minimum": 0 },
+          "bounds": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Bounds" },
+          "conflicts": { "type": "array", "items": { "$ref": "https://mcbuild.dev/protocol/rpc.schema.json#/$defs/Conflict" } },
+          "warnings": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["wouldChange", "bounds", "conflicts", "warnings"],
+        "additionalProperties": false
+      }
+    },
+    "releaseRegion": {
+      "description": "Release a region lock.",
+      "params": {
+        "type": "object",
+        "properties": { "selectionId": { "type": "string" } },
+        "required": ["selectionId"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  }
+}

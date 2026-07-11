@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcbuild.dev/protocol/worlddiff.schema.json",
+  "title": "WorldDiff",
+  "description": "The engine-owned inverse patch. It is the single source of truth for build-level undo (BUILD_ENGINE_PLAN.md section 7.4); FAWE is only the write mechanism. A WorldDiff records, for every cell a commit overwrote, the exact before/after block state so the commit can be applied (redo) or reverted (undo) exactly, even if surrounding terrain changed.",
+  "$ref": "https://mcbuild.dev/protocol/worlddiff.schema.json#/$defs/WorldDiff",
+  "$defs": {
+    "BlockChange": {
+      "title": "BlockChange",
+      "description": "A single cell's transition. 'before' is what the world held prior to the commit (used for undo); 'after' is what the commit wrote (used for redo).",
+      "type": "object",
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "z": { "type": "integer" },
+        "before": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/BlockState" },
+        "after": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/BlockState" }
+      },
+      "required": ["x", "y", "z", "before", "after"],
+      "additionalProperties": false
+    },
+    "WorldDiff": {
+      "title": "WorldDiff",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable id for this diff; passed to undoDiff."
+        },
+        "region": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Region" },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "https://mcbuild.dev/protocol/worlddiff.schema.json#/$defs/BlockChange" }
+        }
+      },
+      "required": ["id", "region", "changes"],
+      "additionalProperties": false
+    }
+  }
+}

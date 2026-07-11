@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcbuild.dev/protocol/common.schema.json",
+  "title": "Common domain primitives",
+  "description": "Shared value objects referenced by every other protocol schema. Coordinates are integer block positions. See BUILD_ENGINE_PLAN.md sections 3.3 and 7.",
+  "$defs": {
+    "Vec3": {
+      "title": "Vec3",
+      "description": "An integer block position in world space.",
+      "type": "object",
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "z": { "type": "integer" }
+      },
+      "required": ["x", "y", "z"],
+      "additionalProperties": false
+    },
+    "Dimensions": {
+      "title": "Dimensions",
+      "description": "Extent of a box. w=X span, h=Y span, l=Z span. Matches the .schem / voxel-buffer index order x + z*w + y*w*l.",
+      "type": "object",
+      "properties": {
+        "w": { "type": "integer", "minimum": 0 },
+        "h": { "type": "integer", "minimum": 0 },
+        "l": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["w", "h", "l"],
+      "additionalProperties": false
+    },
+    "Bounds": {
+      "title": "Bounds",
+      "description": "An axis-aligned box with no world attached (min/max inclusive corners).",
+      "type": "object",
+      "properties": {
+        "min": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Vec3" },
+        "max": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Vec3" }
+      },
+      "required": ["min", "max"],
+      "additionalProperties": false
+    },
+    "BlockState": {
+      "title": "BlockState",
+      "description": "A namespaced block id with optional bracketed state, e.g. 'minecraft:oak_stairs[facing=north,half=top]'. The bracket body is validated loosely; the plugin's data version is authoritative.",
+      "type": "string",
+      "minLength": 3,
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./]+(\\[[^\\]]*\\])?$"
+    },
+    "Facing": {
+      "title": "Facing",
+      "description": "A horizontal cardinal direction; the anchor facing of a BuildSite.",
+      "type": "string",
+      "enum": ["north", "east", "south", "west"]
+    },
+    "SelectionType": {
+      "title": "SelectionType",
+      "description": "WorldEdit-style selection shape. Everything normalizes internally to (AABB, mask).",
+      "type": "string",
+      "enum": ["cuboid", "poly", "cylinder"]
+    },
+    "Region": {
+      "title": "Region",
+      "description": "A cuboid volume in a named world; min/max are inclusive integer corners.",
+      "type": "object",
+      "properties": {
+        "world": { "type": "string", "minLength": 1 },
+        "min": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Vec3" },
+        "max": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Vec3" }
+      },
+      "required": ["world", "min", "max"],
+      "additionalProperties": false
+    },
+    "RegionMask": {
+      "title": "RegionMask",
+      "description": "A per-voxel membership predicate over a region's AABB (writable cells). Absent mask means the whole cuboid. Discriminated by 'kind'.",
+      "oneOf": [
+        {
+          "title": "PolyMask",
+          "type": "object",
+          "properties": {
+            "kind": { "const": "poly" },
+            "vertices": {
+              "type": "array",
+              "minItems": 3,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "x": { "type": "integer" },
+                  "z": { "type": "integer" }
+                },
+                "required": ["x", "z"],
+                "additionalProperties": false
+              }
+            },
+            "yMin": { "type": "integer" },
+            "yMax": { "type": "integer" }
+          },
+          "required": ["kind", "vertices", "yMin", "yMax"],
+          "additionalProperties": false
+        },
+        {
+          "title": "CylinderMask",
+          "type": "object",
+          "properties": {
+            "kind": { "const": "cylinder" },
+            "center": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Vec3" },
+            "radiusX": { "type": "number", "minimum": 0 },
+            "radiusZ": { "type": "number", "minimum": 0 },
+            "yMin": { "type": "integer" },
+            "yMax": { "type": "integer" }
+          },
+          "required": ["kind", "center", "radiusX", "radiusZ", "yMin", "yMax"],
+          "additionalProperties": false
+        },
+        {
+          "title": "DenseMask",
+          "description": "Run-length membership over the AABB in .schem order (x + z*w + y*w*l). 'runs' alternate OUT,IN,OUT,... starting with OUT.",
+          "type": "object",
+          "properties": {
+            "kind": { "const": "dense" },
+            "dims": { "$ref": "https://mcbuild.dev/protocol/common.schema.json#/$defs/Dimensions" },
+            "runs": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "required": ["kind", "dims", "runs"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
