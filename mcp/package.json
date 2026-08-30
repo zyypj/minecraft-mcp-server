@@ -1,6 +1,6 @@
 {
   "name": "@mcbuild/mcp",
-  "version": "2.0.4",
+  "version": "3.0.0",
   "type": "module",
   "main": "dist/main.js",
   "bin": {
@@ -15,7 +15,9 @@
     ],
     "files": [
       "test/**/*.ts"
-    ]
+    ],
+    "timeout": "180s",
+    "concurrency": 2
   },
   "scripts": {
     "dev": "tsx src/main.ts",
@@ -28,14 +30,15 @@
     "lint:fix": "eslint \"{src,test}/**/*.ts\" --fix"
   },
   "dependencies": {
-    "@mcbuild/protocol": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "minecraft-data": "^3.105.0",
     "mineflayer": "^4.35.0",
     "mineflayer-pathfinder": "^2.4.2",
     "vec3": "^0.1.8",
     "yargs": "^18.0.0",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "@mcbuild/engine": "file:../engine",
+    "@mcbuild/protocol": "file:../protocol"
   },
   "devDependencies": {
     "@ava/typescript": "^6.0.0",
@@ -56,5 +59,6 @@
   },
   "engines": {
     "node": ">=20.10.0"
-  }
+  },
+  "description": "MCP server for the Minecraft 1.8 build engine: geometry, style knowledge base, BedWars and duels generators, validation, preview and .schematic export."
 }

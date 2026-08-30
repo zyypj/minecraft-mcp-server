@@ -18,6 +18,7 @@ import { registerFlightTools } from './tools/flight-tools.js';
 import { registerGameStateTools } from './tools/gamestate-tools.js';
 import { registerCraftingTools } from './tools/crafting-tools.js';
 import { registerFurnaceTools } from './tools/furnace-tools.js';
+import { registerBuildEngine } from './build/bootstrap.js';
 
 setupStdioFiltering();
 
@@ -35,7 +36,22 @@ async function main() {
 
   let server: McpServer;
 
-  if (config.backend === 'plugin') {
+  if (config.backend === 'engine') {
+    // The build engine needs no connection to anything: it edits an in-memory volume and writes
+    // schematics and preview images. That is the whole point — a map is judged before it is loaded.
+    server = new McpServer({
+      name: "minecraft-build-mcp",
+      version: "3.0.0"
+    });
+
+    const registered = registerBuildEngine(server, config);
+    log('info', `Build engine ready: ${registered.length} tools, builds -> ${config.buildsDir}, styles -> ${config.stylesDir}`);
+
+    process.stdin.on('end', () => {
+      log('info', 'MCP Client has disconnected. Shutting down...');
+      process.exit(0);
+    });
+  } else if (config.backend === 'plugin') {
     // Plugin backend (M1/M2): construct the WS JSON-RPC client seam. No bot-
     // specific tools are registered; plugin-backed tools arrive in M2.
     const connection = new PluginConnection(

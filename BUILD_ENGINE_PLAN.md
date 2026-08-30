@@ -1,5 +1,19 @@
 # Minecraft Artistic Build Engine — Overarching Architecture & Design Plan
 
+> [!NOTE]
+> **Status update.** This document is the original design proposal, which targeted Minecraft 1.21.x
+> with a Paper plugin committing blocks into a live world.
+>
+> The engine that was actually built took a different direction, chosen deliberately: it targets
+> **Minecraft 1.8.9**, runs **entirely offline**, and produces `.schematic` files plus preview
+> images rather than writing to a server. The renderer is a software rasterizer in-tree rather than
+> a headless-browser stack, and the whole engine has zero runtime dependencies.
+>
+> Much of the thinking below still applies and was carried across — the four-role separation, passes
+> over a shared blackboard, palette-by-role, style packs as data, the anti-slop rules, the
+> validate-before-commit discipline. See [`engine/README.md`](engine/README.md) for what exists.
+
+
 **Status:** Design proposal, pre-implementation. Review the Open Questions (§11) before M1 begins.
 **Scope:** Convert the existing Mineflayer player-bot MCP server into a **server-plugin-based artistic build engine** with a camera feedback loop and a data-driven anti-slop rule system.
 

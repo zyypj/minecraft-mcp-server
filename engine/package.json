@@ -1,15 +1,17 @@
 {
   "name": "@mcbuild/engine",
   "version": "0.1.0",
-  "description": "The Artistic Build Engine: a deterministic, rule-driven, seeded parametric pipeline that composes style-conditioned Minecraft builds and scores them against an anti-slop rubric (see BUILD_ENGINE_PLAN.md §5).",
+  "description": "The Build Engine: a deterministic, seeded, rule-driven pipeline that turns architectural intent into Minecraft 1.8 voxel builds, legacy .schematic files and analysis reports. Zero runtime dependencies.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
@@ -29,14 +31,13 @@
     ],
     "files": [
       "test/**/*.ts"
-    ]
+    ],
+    "timeout": "180s",
+    "concurrency": 2
   },
-  "dependencies": {
-    "@mcbuild/protocol": "workspace:*",
-    "zod": "^3.25.76"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@types/node": "^25.2.3",
+    "@types/node": "^22.10.2",
     "ava": "^6.4.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

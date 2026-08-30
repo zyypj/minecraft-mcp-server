@@ -1,26 +1,27 @@
-# Dist folder
-dist/
-
-# Node.js dependencies
-node_modules/
-
-# Log files
-logs/
-*.log
-npm-debug.log*
-
-# Process IDs
-pids/
-*.pid
-*.seed
-*.pid.lock
-
-# NPM cache
-.npm/
-
-# REPL history
-.node_repl_history
 
 # Claude Code configuration
+# Dist folder
+# Log files
+# NPM cache
+# Node.js dependencies
+# Process IDs
+# REPL history
+*.log
+*.pid
+*.pid.lock
+*.seed
 .claude
 .idea
+.node_repl_history
+.npm/
+.scratch/
+builds/
+dist/
+dist/
+logs/
+node_modules/
+node_modules/
+npm-debug.log*
+package-lock.json
+pids/
+styles/

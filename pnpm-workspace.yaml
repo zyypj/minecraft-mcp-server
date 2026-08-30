@@ -2,4 +2,3 @@ packages:
   - mcp
   - protocol
   - engine
-  - renderer
