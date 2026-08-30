@@ -21,12 +21,15 @@ import { registerBuildProjectTools } from "../tools/build-project-tools.js";
 export function registerBuildEngine(server: McpServer, config: ServerConfig): readonly string[] {
   const buildsDir = absolute(config.buildsDir);
   const stylesDir = absolute(config.stylesDir);
+  const schematicsDir = absolute(config.schematicsDir);
   // Created up front so the first `save_build` or `ingest_schematic` does not fail on a missing
-  // parent, and so the operator can see where output will land before running anything.
+  // parent, and so the operator can see where output will land before running anything. In a
+  // container these are the mount points, so an empty one is a signal that nothing was mounted.
   mkdirSync(buildsDir, { recursive: true });
   mkdirSync(stylesDir, { recursive: true });
+  mkdirSync(schematicsDir, { recursive: true });
 
-  const workspace = new BuildWorkspace(buildsDir, new StyleLibrary(stylesDir));
+  const workspace = new BuildWorkspace(buildsDir, new StyleLibrary(stylesDir), schematicsDir);
   const registry = new BuildToolRegistry(server);
 
   registerBuildProjectTools(registry, workspace);

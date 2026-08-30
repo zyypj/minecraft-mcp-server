@@ -107,6 +107,8 @@ export class BuildWorkspace {
     readonly buildsDir: string,
     /** Where the style knowledge base lives. */
     readonly library: StyleLibrary,
+    /** Where reference `.schematic` files are looked up by name. */
+    readonly schematicsDir: string,
   ) {}
 
   create(init: BuildSessionInit): BuildSession {

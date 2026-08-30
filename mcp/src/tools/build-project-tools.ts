@@ -163,6 +163,43 @@ export function registerBuildProjectTools(registry: BuildToolRegistry, workspace
   // -- Style library --------------------------------------------------------------------------------
 
   registry.register(
+    "list_schematics",
+    "List the reference .schematic files available to ingest. Start here: it reports what is in the schematics directory, so a file dropped into a mounted folder can be referred to by name alone.",
+    { subfolder: z.string().optional().describe("A folder inside the schematics directory.") },
+    (args) => {
+      const dir = args["subfolder"]
+        ? resolve(workspace.schematicsDir, args["subfolder"] as string)
+        : workspace.schematicsDir;
+      if (!existsSync(dir)) return text(`No directory at ${dir}.`);
+
+      const entries = readdirSync(dir, { withFileTypes: true });
+      const files = entries
+        .filter((e) => e.isFile() && /\.(schematic|schem)$/i.test(e.name))
+        .map((e) => {
+          const size = statSync(resolve(dir, e.name)).size;
+          return `  ${e.name}  ${(size / 1024).toFixed(0)} KB`;
+        });
+      const folders = entries.filter((e) => e.isDirectory()).map((e) => `  ${e.name}/`);
+
+      if (files.length === 0 && folders.length === 0) {
+        return lines([
+          `${dir} is empty.`,
+          "",
+          "Put reference .schematic files there and they can be ingested by name, for example:",
+          '  ingest_schematic { "file": "snoopy-bedwars.schematic", "styleId": "snoopy" }',
+        ]);
+      }
+      return lines([
+        `${dir}:`,
+        ...folders,
+        ...files,
+        "",
+        "Ingest one with `ingest_schematic`, or the whole folder at once with `ingest_schematic_folder`.",
+      ]);
+    },
+  );
+
+  registry.register(
     "ingest_schematic",
     "Read a reference .schematic into the style library. This MEASURES the reference — palette by surface exposure, colour clusters, material ramps, symmetry, mass layout, terrain and density traits, repeated motifs — and writes editable JSON plus reusable components. It is a knowledge base, not training: everything it learns can be read and corrected by hand.",
     {
@@ -173,8 +210,8 @@ export function registerBuildProjectTools(registry: BuildToolRegistry, workspace
       extractComponents: z.boolean().optional().describe("Default true."),
     },
     (args) => {
-      const file = resolvePath(args["file"] as string);
-      if (!existsSync(file)) throw new Error(`No file at ${file}`);
+      const file = resolveInputPath(args["file"] as string, workspace);
+      if (!existsSync(file)) throw notFound(args["file"] as string, workspace);
       const result = workspace.library.ingestFile(file, {
         styleId: args["styleId"] as string,
         name: args["name"] as string | undefined,
@@ -204,8 +241,12 @@ export function registerBuildProjectTools(registry: BuildToolRegistry, workspace
       name: z.string().optional(),
     },
     (args) => {
-      const dir = resolvePath(args["folder"] as string);
-      if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`No folder at ${dir}`);
+      const dir = resolveInputPath(args["folder"] as string, workspace);
+      if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+        throw new Error(
+          `No folder "${args["folder"]}". Looked in ${process.cwd()} and ${workspace.schematicsDir}.`,
+        );
+      }
       const files = readdirSync(dir).filter((f) => /\.(schematic|schem)$/i.test(f));
       if (files.length === 0) throw new Error(`No .schematic or .schem files in ${dir}`);
       const summaries: string[] = [];
@@ -617,7 +658,7 @@ export function registerBuildProjectTools(registry: BuildToolRegistry, workspace
     (args) => {
       const session = workspace.require(args["build"] as string | undefined);
       const folder = buildSlug((args["name"] as string | undefined) ?? session.name);
-      const parent = args["dir"] ? resolvePath(args["dir"] as string) : workspace.buildsDir;
+      const parent = args["dir"] ? resolveOutputPath(args["dir"] as string) : workspace.buildsDir;
       const analysis =
         session.points.length > 0
           ? analyzeBedwarsMap(session.volume, {
@@ -666,7 +707,7 @@ export function registerBuildProjectTools(registry: BuildToolRegistry, workspace
     { build: buildRefSchema, file: z.string().describe("Destination path, ending in .schematic.") },
     (args) => {
       const session = workspace.require(args["build"] as string | undefined);
-      const target = resolvePath(args["file"] as string);
+      const target = resolveOutputPath(args["file"] as string);
       const data = writeSchematic(session.volume);
       writeFileSync(target, data);
       return text(
@@ -680,8 +721,8 @@ export function registerBuildProjectTools(registry: BuildToolRegistry, workspace
     "Open a .schematic as a new build, so it can be edited, analysed, previewed and re-exported.",
     { file: z.string(), name: z.string().optional() },
     (args) => {
-      const file = resolvePath(args["file"] as string);
-      if (!existsSync(file)) throw new Error(`No file at ${file}`);
+      const file = resolveInputPath(args["file"] as string, workspace);
+      if (!existsSync(file)) throw notFound(args["file"] as string, workspace);
       const read = readSchematic(readFileSync(file));
       const session = new BuildSession({
         name: (args["name"] as string | undefined) ?? basename(file).replace(/\.[^.]+$/, ""),
@@ -709,8 +750,8 @@ export function registerBuildProjectTools(registry: BuildToolRegistry, workspace
     "Measure a .schematic without adding it to the style library. Use it to understand a reference before deciding whether to ingest it.",
     { file: z.string() },
     (args) => {
-      const file = resolvePath(args["file"] as string);
-      if (!existsSync(file)) throw new Error(`No file at ${file}`);
+      const file = resolveInputPath(args["file"] as string, workspace);
+      if (!existsSync(file)) throw notFound(args["file"] as string, workspace);
       const read = readSchematic(readFileSync(file));
       const profile = analyzeStyle(read.volume, { id: "adhoc", name: basename(file) });
       return lines([
@@ -721,8 +762,36 @@ export function registerBuildProjectTools(registry: BuildToolRegistry, workspace
   );
 }
 
-function resolvePath(input: string): string {
+/**
+ * Resolve a user-supplied path.
+ *
+ * An absolute path is taken as given. A relative one is looked for in the working directory and
+ * then in the configured schematics directory, and the *existing* one wins. That is what lets a
+ * Docker user drop `snoopy-bedwars.schematic` into a mounted folder and refer to it by name alone,
+ * without having to know or care what the path is inside the container.
+ */
+function resolveInputPath(input: string, workspace: BuildWorkspace): string {
+  if (isAbsolute(input)) return input;
+  const candidates = [resolve(process.cwd(), input), resolve(workspace.schematicsDir, input)];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  // Nothing exists yet: hand back the schematics-directory form, which is the one a caller most
+  // likely meant, and let the caller's own existence check produce the error.
+  return candidates[1] ?? candidates[0]!;
+}
+
+/** Resolve a path for *writing*, which must not depend on what already exists. */
+function resolveOutputPath(input: string): string {
   return isAbsolute(input) ? input : resolve(process.cwd(), input);
+}
+
+/** Describe where a missing file was looked for, so the caller can fix the call. */
+function notFound(input: string, workspace: BuildWorkspace): Error {
+  return new Error(
+    `No file "${input}". Looked in ${process.cwd()} and ${workspace.schematicsDir}. ` +
+      "Call `list_schematics` to see what is available.",
+  );
 }
 
 function blockLabel(packed: number): string {

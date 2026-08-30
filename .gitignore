@@ -15,7 +15,6 @@
 .node_repl_history
 .npm/
 .scratch/
-builds/
 dist/
 dist/
 logs/
@@ -24,4 +23,10 @@ node_modules/
 npm-debug.log*
 package-lock.json
 pids/
-styles/
+# Docker bind mounts: keep the folders, ignore what lands in them.
+builds/*
+!builds/.gitkeep
+styles/*
+!styles/.gitkeep
+schematics/*
+!schematics/.gitkeep

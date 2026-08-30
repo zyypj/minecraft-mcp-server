@@ -48,13 +48,97 @@ selected with `--backend=bot`.
 | Package | Name | Role |
 |---|---|---|
 | [`engine/`](engine) | `@mcbuild/engine` | The build engine: 1.8 voxel core, geometry, style knowledge base, generators, validation, renderer. **Zero runtime dependencies.** |
-| [`mcp/`](mcp) | `@mcbuild/mcp` | MCP server — 78 build tools, plus the legacy bot and plugin backends |
+| [`mcp/`](mcp) | `@mcbuild/mcp` | MCP server — 79 build tools, plus the legacy bot and plugin backends |
 | [`protocol/`](protocol) | `@mcbuild/protocol` | JSON-RPC contract for the (unfinished) Java plugin backend |
 | [`plugin/`](plugin) | (Java) | Paper plugin scaffold for a future in-world backend |
 
 The engine's architecture is documented in [`engine/README.md`](engine/README.md).
 
-## Quick start (build engine)
+## Quick start with Docker
+
+Two commands and one config block. Nothing else has to be installed — no Node, no Minecraft server,
+no world.
+
+```bash
+docker compose up -d --build
+```
+
+That builds the image and leaves a container running with three folders mounted:
+
+| Host | Container | What goes in it |
+|---|---|---|
+| `./schematics` | `/data/schematics` | Your reference `.schematic` maps, to ingest as styles |
+| `./builds` | `/data/builds` | Generated build folders: schematic, manifest, analysis, previews |
+| `./styles` | `/data/styles` | The measured style knowledge base — editable JSON |
+
+Then point your MCP client at the running container:
+
+```json
+{
+  "mcpServers": {
+    "minecraft-build": {
+      "command": "docker",
+      "args": ["exec", "-i", "minecraft-build-mcp", "mcp-build"]
+    }
+  }
+}
+```
+
+Restart the client, and that is the whole setup. From then on it is conversation:
+
+> *Drop `snoopy-bedwars.schematic` into `schematics/`.*
+>
+> "Ingest that schematic as a style called snoopy, then build me an eight-team BedWars map in that
+> style with a 34-block rush and a giant mascot in the middle. Show me the previews before saving."
+
+The previews come back **inline as images**, so a map can be judged in the chat. When it is approved,
+`save_build` writes the folder to `./builds` on your machine.
+
+<details>
+<summary>Why <code>docker exec</code> and not a port</summary>
+
+MCP is JSON-RPC over stdin/stdout, so a session *is* a process attached to a pipe — there is nothing
+to listen on a port. The compose service keeps the container alive with your folders mounted, and
+each client session starts its own short-lived server inside it via `docker exec -i`. The container
+runs with `network_mode: none`: the engine never connects to anything.
+
+</details>
+
+<details>
+<summary>Without compose, one container per session</summary>
+
+```json
+{
+  "mcpServers": {
+    "minecraft-build": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "C:/path/to/schematics:/data/schematics",
+        "-v", "C:/path/to/builds:/data/builds",
+        "-v", "C:/path/to/styles:/data/styles",
+        "minecraft-build-mcp"
+      ]
+    }
+  }
+}
+```
+
+Build it first with `docker build -t minecraft-build-mcp .`. The paths must be absolute: a client
+config is not a shell, so `./builds` will not expand.
+
+</details>
+
+<details>
+<summary>Linux hosts: file ownership</summary>
+
+The container runs as uid 1000 (`node`). If your uid differs, the mounted folders will be
+unwritable. Uncomment the `user:` line in `docker-compose.yml` and export `UID`/`GID` before
+`docker compose up`. On Docker Desktop for Windows and macOS this does not apply.
+
+</details>
+
+## Quick start without Docker
 
 ```json
 {
@@ -67,12 +151,19 @@ The engine's architecture is documented in [`engine/README.md`](engine/README.md
 }
 ```
 
-No Minecraft server, no world, no login. `--builds-dir` and `--styles-dir` control where output and
-the style library live (they default to `builds/` and `styles/` under the working directory).
+No Minecraft server, no world, no login. `--schematics-dir`, `--builds-dir` and `--styles-dir`
+control where references are read from and where output and the style library land; they default to
+`schematics/`, `builds/` and `styles/` under the working directory.
+
+A relative filename given to a tool is looked for in the working directory *and* in the schematics
+directory, so `ingest_schematic { "file": "snoopy.schematic" }` finds the file without anyone having
+to think about paths. `list_schematics` reports what is there.
 
 ### The workflow
 
 ```
+list_schematics           see which reference maps are available
+      |
 ingest_schematic          teach the library your reference maps (once, per style)
       |
 build_bedwars_map         generate, with gameplay planned before decoration
@@ -121,8 +212,8 @@ Only that island is reverted and rebuilt. Everything else in the map stays byte-
 ### Tool surface
 
 **Project** — `create_build`, `list_builds`, `select_build`, `close_build`, `describe_build`,
-`set_build_palette`, `load_schematic`, `export_schematic`, `analyze_schematic`, `save_build`,
-`preview_build`
+`set_build_palette`, `list_schematics`, `load_schematic`, `export_schematic`, `analyze_schematic`,
+`save_build`, `preview_build`
 
 **Style knowledge base** — `ingest_schematic`, `ingest_schematic_folder`, `list_styles`,
 `get_style_profile`, `blend_styles`, `list_style_components`, `paste_style_component`
@@ -164,8 +255,14 @@ The Node runtime version is unaffected — only the *world format* is 1.8.
 
 ```bash
 cd engine && npm install && npm test     # 44 tests
-cd ../mcp && npm install && npm test     # 131 tests
+cd ../mcp && npm install && npm test     # 137 tests, including the compiled server over real stdio
+docker build -t minecraft-build-mcp .    # the image the compose file uses
 ```
+
+`mineflayer` and `minecraft-data` are **optional dependencies** — a quarter of a gigabyte that only
+the legacy bot backend uses. `npm install` still gets them; the Docker image installs with
+`--omit=optional` and the engine backend never notices. Selecting `--backend=bot` in an image that
+omitted them fails with an instruction rather than a module-resolution stack trace.
 
 ## Legacy (bot backend)
 

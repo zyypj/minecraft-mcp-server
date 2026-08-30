@@ -2,13 +2,13 @@ name: CI Build
 
 on:
   push:
-    branches: [ main, redesign/build-engine ]
+    branches: [ main, redesign/build-engine, 'feature/**' ]
   pull_request:
     branches: [ main, redesign/build-engine ]
 
 jobs:
   node:
-    name: Node workspaces (mcp / engine / renderer / protocol)
+    name: Node workspaces (engine / mcp / protocol)
     runs-on: ubuntu-latest
 
     steps:
@@ -42,6 +42,45 @@ jobs:
 
     - name: Test
       run: pnpm -r test
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: docker/setup-buildx-action@v3
+
+    - name: Build image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: false
+        load: true
+        tags: minecraft-build-mcp:ci
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    # The image ships an MCP server on stdio, so the only meaningful smoke test is to speak the
+    # protocol to it. This catches a broken entrypoint, a missing dependency, or output that would
+    # corrupt the JSON-RPC stream — none of which a successful build would reveal.
+    - name: Smoke test the image over stdio
+      run: |
+        printf '%s\n%s\n' \
+          '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+          '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+          | docker run -i --rm minecraft-build-mcp:ci > response.jsonl
+        node -e '
+          const lines = require("fs").readFileSync("response.jsonl", "utf8").trim().split("\n").filter(Boolean);
+          const responses = lines.map((line) => JSON.parse(line));
+          const tools = responses.find((r) => r.id === 2)?.result?.tools ?? [];
+          if (tools.length < 70) throw new Error(`expected the full build surface, got ${tools.length}`);
+          for (const name of ["build_bedwars_map", "ingest_schematic", "preview_build", "save_build"]) {
+            if (!tools.some((t) => t.name === name)) throw new Error(`${name} is missing`);
+          }
+          console.log(`ok: ${tools.length} tools advertised`);
+        '
 
   # The Java Paper plugin (plugin/) needs JDK 21 + a committed Gradle wrapper.
   # Enable this once `gradle wrapper` has been run and the wrapper is committed.

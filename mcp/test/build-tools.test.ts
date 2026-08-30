@@ -41,6 +41,7 @@ function harness(): Harness {
     token: "",
     buildsDir: join(dir, "builds"),
     stylesDir: join(dir, "styles"),
+    schematicsDir: join(dir, "schematics"),
   };
   const names = [...registerBuildEngine(fake, config)];
 

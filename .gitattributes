@@ -1,3 +1,10 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 *.ts linguist-language=TypeScript
+
+# Anything consumed inside the Linux container must keep LF on every host. A CRLF checkout of the
+# launcher script turns its shebang into `/bin/sh\r`, which fails as "no such file or directory".
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+docker/** text eol=lf
+*.sh text eol=lf
