@@ -1,0 +1,16 @@
+# Everything the image builds from scratch or does not need.
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.github
+.scratch
+builds
+styles
+schematics
+package-lock.json
+**/package-lock.json
+*.log
+plugin
+BUILD_ENGINE_PLAN.md

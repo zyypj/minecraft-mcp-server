@@ -1,0 +1,38 @@
+# The Minecraft 1.8 build engine as a long-running container.
+#
+#   docker compose up -d --build
+#
+# then point your MCP client at it. The container itself does nothing until a client attaches: MCP
+# speaks JSON-RPC over stdin/stdout, so each session is a `docker exec -i` into the box that is
+# already up with your folders mounted. There is no port and nothing to reach over the network.
+
+services:
+  build-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: minecraft-build-mcp:latest
+    container_name: minecraft-build-mcp
+
+    # The image's own entrypoint is the MCP server on stdio. Under compose we keep the container
+    # alive instead, and let each client session start its own server through `docker exec`.
+    entrypoint: ["sleep", "infinity"]
+    restart: unless-stopped
+    init: true
+
+    volumes:
+      # Drop reference .schematic files here; tools can then refer to them by filename alone.
+      - ./schematics:/data/schematics
+      # Generated build folders land here: schematic, manifest, structure graph, analysis, previews.
+      - ./builds:/data/builds
+      # The style knowledge base built from your references. Editable JSON — keep it under version
+      # control if you want your measured styles to travel with the repo.
+      - ./styles:/data/styles
+
+    # On a Linux host the container's `node` user (uid 1000) must be able to write to the bind
+    # mounts above. If your uid differs, uncomment this and export UID/GID before `compose up`.
+    # user: "${UID:-1000}:${GID:-1000}"
+
+    # Nothing here is exposed. The engine never connects to a Minecraft server, and the MCP
+    # transport is stdio, so the container needs no network at all.
+    network_mode: none

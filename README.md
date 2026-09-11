@@ -15,7 +15,8 @@
 ___
 
 > [!IMPORTANT]
-> Currently supports Minecraft version 1.21.11. Newer versions may not work with this MCP server, but we will add support as soon as possible.
+> The **build engine** targets Minecraft **1.8.9** and emits legacy `.schematic` files.
+> The **legacy bot backend** targets Minecraft 1.21.11.
 
 https://github.com/user-attachments/assets/6f17f329-3991-4bc7-badd-7cde9aacb92f
 
@@ -25,25 +26,248 @@ A Minecraft bot powered by large language models and [Mineflayer API](https://gi
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@yuniko-software/minecraft-mcp-server/badge" alt="mcp-minecraft MCP server" />
 </a>
 
-## Monorepo layout
+## What this is now
 
-This repository is a [pnpm](https://pnpm.io) workspace. The build engine is split into focused packages:
+Two things live in this repository, and they answer different questions.
+
+**The build engine** (default) generates Minecraft **1.8.9** maps offline. It never connects to a
+server: it composes geometry in memory, validates it, renders preview images, and writes a
+`.schematic` you load yourself. The point of it is to move the level of abstraction, so an agent
+decides
+
+> *a circular tower of radius 12 and height 35*
+> *an eight-team BedWars map in the carousel style with a 34-block rush and a giant mascot at mid*
+
+instead of naming thirty thousand block coordinates.
+
+**The legacy player bot** is the original Mineflayer server, still here and still working, now
+selected with `--backend=bot`.
+
+## Monorepo layout
 
 | Package | Name | Role |
 |---|---|---|
-| [`mcp/`](mcp) | `@mcbuild/mcp` | MCP server — the LLM-facing tool surface and orchestrator (evolved from the original bot server) |
-| [`engine/`](engine) | `@mcbuild/engine` | Build engine — deterministic, rule-driven parametric geometry pipeline |
-| [`renderer/`](renderer) | `@mcbuild/renderer` | Camera / renderer — turns extracted block data into multi-angle PNGs |
-| [`protocol/`](protocol) | `@mcbuild/protocol` | Shared contract — JSON-RPC types + zod schemas shared by the MCP server and the plugin |
-| [`plugin/`](plugin) | (Java) | Paper server plugin — commits blocks directly into the world (not a Node workspace) |
+| [`engine/`](engine) | `@mcbuild/engine` | The build engine: 1.8 voxel core, geometry, style knowledge base, generators, validation, renderer. **Zero runtime dependencies.** |
+| [`mcp/`](mcp) | `@mcbuild/mcp` | MCP server — 79 build tools, plus the legacy bot and plugin backends |
+| [`protocol/`](protocol) | `@mcbuild/protocol` | JSON-RPC contract for the (unfinished) Java plugin backend |
+| [`plugin/`](plugin) | (Java) | Paper plugin scaffold for a future in-world backend |
 
-The overarching architecture, phased roadmap, and rule system are documented in [BUILD_ENGINE_PLAN.md](BUILD_ENGINE_PLAN.md).
+The engine's architecture is documented in [`engine/README.md`](engine/README.md).
 
-Common workspace scripts (run from the repo root): `pnpm build`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, and `pnpm dev:mcp`.
+## Quick start with Docker
+
+Two commands and one config block. Nothing else has to be installed — no Node, no Minecraft server,
+no world.
+
+```bash
+docker compose up -d --build
+```
+
+That builds the image and leaves a container running with three folders mounted:
+
+| Host | Container | What goes in it |
+|---|---|---|
+| `./schematics` | `/data/schematics` | Your reference `.schematic` maps, to ingest as styles |
+| `./builds` | `/data/builds` | Generated build folders: schematic, manifest, analysis, previews |
+| `./styles` | `/data/styles` | The measured style knowledge base — editable JSON |
+
+Then point your MCP client at the running container:
+
+```json
+{
+  "mcpServers": {
+    "minecraft-build": {
+      "command": "docker",
+      "args": ["exec", "-i", "minecraft-build-mcp", "mcp-build"]
+    }
+  }
+}
+```
+
+Restart the client, and that is the whole setup. From then on it is conversation:
+
+> *Drop `snoopy-bedwars.schematic` into `schematics/`.*
+>
+> "Ingest that schematic as a style called snoopy, then build me an eight-team BedWars map in that
+> style with a 34-block rush and a giant mascot in the middle. Show me the previews before saving."
+
+The previews come back **inline as images**, so a map can be judged in the chat. When it is approved,
+`save_build` writes the folder to `./builds` on your machine.
+
+<details>
+<summary>Why <code>docker exec</code> and not a port</summary>
+
+MCP is JSON-RPC over stdin/stdout, so a session *is* a process attached to a pipe — there is nothing
+to listen on a port. The compose service keeps the container alive with your folders mounted, and
+each client session starts its own short-lived server inside it via `docker exec -i`. The container
+runs with `network_mode: none`: the engine never connects to anything.
+
+</details>
+
+<details>
+<summary>Without compose, one container per session</summary>
+
+```json
+{
+  "mcpServers": {
+    "minecraft-build": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "C:/path/to/schematics:/data/schematics",
+        "-v", "C:/path/to/builds:/data/builds",
+        "-v", "C:/path/to/styles:/data/styles",
+        "minecraft-build-mcp"
+      ]
+    }
+  }
+}
+```
+
+Build it first with `docker build -t minecraft-build-mcp .`. The paths must be absolute: a client
+config is not a shell, so `./builds` will not expand.
+
+</details>
+
+<details>
+<summary>Linux hosts: file ownership</summary>
+
+The container runs as uid 1000 (`node`). If your uid differs, the mounted folders will be
+unwritable. Uncomment the `user:` line in `docker-compose.yml` and export `UID`/`GID` before
+`docker compose up`. On Docker Desktop for Windows and macOS this does not apply.
+
+</details>
+
+## Quick start without Docker
+
+```json
+{
+  "mcpServers": {
+    "minecraft-build": {
+      "command": "npx",
+      "args": ["-y", "github:yuniko-software/minecraft-mcp-server", "--backend", "engine"]
+    }
+  }
+}
+```
+
+No Minecraft server, no world, no login. `--schematics-dir`, `--builds-dir` and `--styles-dir`
+control where references are read from and where output and the style library land; they default to
+`schematics/`, `builds/` and `styles/` under the working directory.
+
+A relative filename given to a tool is looked for in the working directory *and* in the schematics
+directory, so `ingest_schematic { "file": "snoopy.schematic" }` finds the file without anyone having
+to think about paths. `list_schematics` reports what is there.
+
+### The workflow
+
+```
+list_schematics           see which reference maps are available
+      |
+ingest_schematic          teach the library your reference maps (once, per style)
+      |
+build_bedwars_map         generate, with gameplay planned before decoration
+      |
+preview_build             look at it: perspective, top, and an annotated gameplay plan
+      |
+inspect_build             floating blocks, sealed pockets, suffocation, non-1.8 blocks
+analyze_bedwars_map       rush distances, height advantage, symmetry, bridging cost
+      |
+undo_build / regenerate_structure         fix what is wrong
+      |
+save_build                schematic + manifest + structure graph + palette + analysis + previews
+```
+
+Nothing is written to a server at any point. Loading the result is a deliberate human step:
+
+```
+//schem load build
+//paste -a
+```
+
+### The rule the tools are built around
+
+> Never resolve a complex build through thousands of individual `set_block` calls. Always reach for
+> the highest-level operation that fits — domain generator, then structure, then geometry, then
+> region op. Single-block writes are for final adjustments only.
+
+`set_block` exists and says exactly that in its own description.
+
+### Editing what you already generated
+
+Every structure a generator builds gets a **permanent id** and keeps the exact inverse patch of what
+it wrote, the parameters it was built from, and its seed. So this works:
+
+```
+list_structures --kind team_island
+  -> structure_8a2ea  team_island "RED"   5,843 blocks
+     structure_ad9cb  team_island "BLUE"  5,109 blocks
+     ...
+
+regenerate_structure structure_8a2ea --params '{"roofStyle":"dome"}'
+```
+
+Only that island is reverted and rebuilt. Everything else in the map stays byte-identical.
+
+### Tool surface
+
+**Project** — `create_build`, `list_builds`, `select_build`, `close_build`, `describe_build`,
+`set_build_palette`, `list_schematics`, `load_schematic`, `export_schematic`, `analyze_schematic`,
+`save_build`, `preview_build`
+
+**Style knowledge base** — `ingest_schematic`, `ingest_schematic_folder`, `list_styles`,
+`get_style_profile`, `blend_styles`, `list_style_components`, `paste_style_component`
+
+**History** — `undo_build`, `redo_build`, `list_history`, `create_checkpoint`, `restore_checkpoint`,
+`list_checkpoints`, `compare_checkpoints`
+
+**Structures** — `list_structures`, `describe_structure`, `delete_structure`, `regenerate_structure`
+
+**Validation** — `inspect_build`, `check_constraints`, `analyze_bedwars_map`, `measure_route`
+
+**Domain** — `build_bedwars_map`, `build_duels_arena`
+
+**Composition** — `build_island`, `flatten_terrain`, `plant_vegetation`, `build_tower`,
+`build_building`, `build_roof`, `build_freestanding_wall`, `build_arena`, `build_bridge`,
+`build_path`, `build_stairway`, `build_voxel_sculpture`, `build_sculpture_from_silhouette`,
+`list_sculpture_archetypes`
+
+**Geometry** — `build_box`, `build_circle`, `build_sphere`, `build_cylinder`, `build_cone`,
+`build_pyramid`, `build_torus`, `build_line`, `build_wall`, `build_arch`, `build_helix`,
+`build_polygon`, `build_gradient`
+
+**Regions** — `replace_region`, `hollow_region`, `outline_region`, `smooth_region`,
+`scatter_decoration`, `copy_region`, `paste_region`, `rotate_structure`, `mirror_structure`,
+`mirror_half`, `distribute_radially`, `radial_symmetry`, `fill_region`, `clear_region`, `set_block`,
+`get_block`
+
+### Minecraft 1.8 compatibility
+
+The engine targets 1.8.9 in the only way that actually works: it knows the 1.8 block table (ids
+0-197) and refuses everything else. Asking for `white_concrete` is an error naming `white_wool` as
+the substitute, not a silent grey block. Rotation and mirroring transform the 4-bit data values, so
+instanced structures keep their stairs, doors, rails and vines facing correctly. Output is legacy
+MCEdit `.schematic`, which is what 1.8-era WorldEdit reads.
+
+The Node runtime version is unaffected — only the *world format* is 1.8.
+
+## Development
+
+```bash
+cd engine && npm install && npm test     # 44 tests
+cd ../mcp && npm install && npm test     # 137 tests, including the compiled server over real stdio
+docker build -t minecraft-build-mcp .    # the image the compose file uses
+```
+
+`mineflayer` and `minecraft-data` are **optional dependencies** — a quarter of a gigabyte that only
+the legacy bot backend uses. `npm install` still gets them; the Docker image installs with
+`--omit=optional` and the engine backend never notices. Selecting `--backend=bot` in an image that
+omitted them fails with an instruction rather than a module-resolution stack trace.
 
 ## Legacy (bot backend)
 
-> The sections below describe the original Mineflayer player-bot backend. It remains the **default** backend (`--backend=bot`) and works exactly as before; it is retained as a fallback through milestone M5 (see [BUILD_ENGINE_PLAN.md](BUILD_ENGINE_PLAN.md) §9). The bot server now lives in the [`mcp/`](mcp) package.
+
+> The sections below describe the original Mineflayer player-bot backend. It still works exactly as it did, and is now selected with `--backend=bot`. It plays the game as a character; the build engine above does not.
 
 ## Prerequisites
 

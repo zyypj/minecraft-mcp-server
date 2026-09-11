@@ -1,0 +1,11 @@
+#!/bin/sh
+# Launch the build-engine MCP server with the container's standard directories.
+#
+# Exists so attaching to a running container is `docker exec -i minecraft-build-mcp mcp-build`
+# rather than a nine-argument command line in a JSON config file.
+exec node /app/mcp/dist/main.js \
+  --backend engine \
+  --schematics-dir /data/schematics \
+  --builds-dir /data/builds \
+  --styles-dir /data/styles \
+  "$@"

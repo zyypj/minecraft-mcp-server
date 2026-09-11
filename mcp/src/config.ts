@@ -5,8 +5,26 @@ export interface ServerConfig {
   host: string;
   port: number;
   username: string;
-  /** Which world-effector backend to use. Defaults to the Mineflayer bot. */
-  backend: 'bot' | 'plugin';
+  /**
+   * Which backend to run.
+   *
+   * `engine` is the default and needs no Minecraft server at all: it edits an in-memory volume and
+   * writes `.schematic` files and preview images. `bot` is the legacy Mineflayer player-bot path,
+   * kept selectable; `plugin` is the JSON-RPC client seam for the Java plugin.
+   */
+  backend: 'engine' | 'bot' | 'plugin';
+  /** Where `save_build` writes build folders. */
+  buildsDir: string;
+  /** Where the style knowledge base lives. */
+  stylesDir: string;
+  /**
+   * Where reference `.schematic` files are read from.
+   *
+   * Tools that take a file path resolve a relative path against this directory as well as the
+   * working directory, so a Docker user can drop `snoopy.schematic` into a mounted folder and refer
+   * to it by name alone.
+   */
+  schematicsDir: string;
   /** WebSocket URL of the Java plugin RPC endpoint (used when backend is 'plugin'). */
   pluginUrl: string;
   /** Bearer token for the plugin RPC endpoint (used when backend is 'plugin'). */
@@ -32,9 +50,25 @@ export function parseConfig(): ServerConfig {
     })
     .option('backend', {
       type: 'string',
-      choices: ['bot', 'plugin'] as const,
-      description: 'World-effector backend: the Mineflayer player bot (default) or the Java plugin RPC client',
-      default: 'bot'
+      choices: ['engine', 'bot', 'plugin'] as const,
+      description:
+        'Backend: the offline build engine (default, no Minecraft server needed), the Mineflayer player bot, or the Java plugin RPC client',
+      default: 'engine'
+    })
+    .option('builds-dir', {
+      type: 'string',
+      description: 'Directory that save_build writes build folders into',
+      default: 'builds'
+    })
+    .option('styles-dir', {
+      type: 'string',
+      description: 'Directory holding the style knowledge base built from reference schematics',
+      default: 'styles'
+    })
+    .option('schematics-dir', {
+      type: 'string',
+      description: 'Directory to look in for reference .schematic files named by a relative path',
+      default: 'schematics'
     })
     .option('plugin-url', {
       type: 'string',
@@ -54,8 +88,11 @@ export function parseConfig(): ServerConfig {
     host: argv.host,
     port: argv.port,
     username: argv.username,
-    backend: argv.backend,
+    backend: argv.backend as ServerConfig['backend'],
     pluginUrl: argv['plugin-url'],
-    token: argv.token
+    token: argv.token,
+    buildsDir: argv['builds-dir'],
+    stylesDir: argv['styles-dir'],
+    schematicsDir: argv['schematics-dir']
   };
 }
